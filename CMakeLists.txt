@@ -75,7 +75,10 @@ if(WIN32)
     )
 else()
     find_package(OpenGL REQUIRED)
-    find_package(GLFW3 REQUIRED)
+    # Debian/Ubuntu and Homebrew both ship the config as lowercase "glfw3"
+    # (e.g. .../cmake/glfw3/glfw3Config.cmake). On case-sensitive filesystems
+    # "find_package(GLFW3)" would miss it, so search for the lowercase name.
+    find_package(glfw3 REQUIRED)
     target_link_libraries(pms2osu-v2 PRIVATE glfw OpenGL::GL)
 endif()
 
