@@ -26,7 +26,10 @@ add_library(imgui STATIC
     ${IMGUI_BACKENDS}/imgui_impl_glfw.cpp
     ${IMGUI_BACKENDS}/imgui_impl_opengl3.cpp
 )
-target_include_directories(imgui PUBLIC ${IMGUI})
+target_include_directories(imgui PUBLIC
+    ${IMGUI}
+    third_party/glfw/include
+)
 
 # libogg
 add_library(ogg STATIC
@@ -54,6 +57,7 @@ target_include_directories(vorbis PUBLIC
     third_party/libvorbis/include
     ${VORBIS_LIB}
 )
+target_link_libraries(vorbis PUBLIC ogg)
 
 add_executable(pms2osu-v2 ${SOURCES})
 target_include_directories(pms2osu-v2 PRIVATE
