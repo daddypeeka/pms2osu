@@ -229,13 +229,21 @@ void App::RenderScanPanel() {
 
     float avail = ImGui::GetContentRegionAvail().x;
     float inputW = avail - wImport - spacing - 4.0f;
-    if (inputW < 0) inputW = 0;   // extremely narrow window: button takes priority
+    if (inputW > 500) inputW = 500;   // keep the path box from getting too long
+    if (inputW < 0) inputW = 0;       // extremely narrow window: button takes priority
     ImGui::SetNextItemWidth(inputW);
     ImGui::InputText(tr("manual path", "路径"), manualDirBuf_, sizeof(manualDirBuf_));
     ImGui::SameLine();
     if (ImGui::Button(bImport)) {
         std::string p = manualDirBuf_;
-        if (!p.empty()) addDroppedPath(p);
+        if (p.empty()) {
+            // No path typed yet: let the user pick a PMS folder directly,
+            // so clicking Import always does something.
+            p = pickFolder("Import PMS folder");
+            if (p.empty()) return;   // dialog canceled
+            std::snprintf(manualDirBuf_, sizeof(manualDirBuf_), "%s", p.c_str());
+        }
+        addDroppedPath(p);
     }
 }
 
@@ -255,8 +263,29 @@ void App::RenderTasks() {
         ImGui::TableSetupColumn(tr("Result", "结果"), ImGuiTableColumnFlags_WidthStretch, 0);
         ImGui::TableHeadersRow();
         for (size_t i = 0; i < tasks.size(); ++i) {
+            ImGui::PushID((int)i);
             ImGui::TableNextRow();
-            ImGui::TableNextColumn();
+            // Invisible full-row hit area for the right-click context menu.
+            // Header colors are pushed transparent so no hover highlight shows.
+            ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0, 0, 0, 0));
+            ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0, 0, 0, 0));
+            ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0, 0, 0, 0));
+            ImGui::TableSetColumnIndex(0);
+            ImGui::Selectable("##row", false, ImGuiSelectableFlags_SpanAllColumns);
+            ImGui::PopStyleColor(3);
+            if (ImGui::BeginPopupContextItem("##taskctx")) {
+                if (ImGui::MenuItem(tr("Delete task", "删除任务"))) conv_.removeTask(i);
+                if (ImGui::MenuItem(tr("Delete all tasks", "删除全部任务"))) conv_.clearTasks();
+                ImGui::EndPopup();
+            }
+            // Cell contents (submitted after the selectable so they stay clickable).
+            ImGui::TableSetColumnIndex(0);
+            // Center the checkbox in its narrow column (the checkbox already
+            // drives the row height, so vertical alignment is automatic).
+            float cbSize = ImGui::GetFrameHeight();
+            float colW = ImGui::GetColumnWidth(0);
+            float xOff = (colW - cbSize) * 0.5f;
+            if (xOff > 0) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + xOff);
             bool en = tasks[i].enabled;
             if (ImGui::Checkbox(("##en" + std::to_string(i)).c_str(), &en))
                 conv_.setTaskEnabled(i, en);
@@ -274,6 +303,7 @@ void App::RenderTasks() {
             ImGui::TextUnformatted(st);
             ImGui::TableNextColumn();
             ImGui::TextUnformatted(tasks[i].msg.c_str());
+            ImGui::PopID();
         }
         ImGui::EndTable();
     }

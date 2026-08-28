@@ -8,12 +8,14 @@
 
 # Runtime / generated data
 imgui.ini
+build.bat
 /export/
 *.osz
 *.ogg
 *.wav
 
 # OS junk
+DEPLOY.md
 .DS_Store
 Thumbs.db
 desktop.ini

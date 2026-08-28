@@ -40,6 +40,11 @@ void Converter::clearTasks() {
     tasks_.clear();
 }
 
+void Converter::removeTask(size_t idx) {
+    std::lock_guard<std::mutex> lk(m_);
+    if (idx < tasks_.size()) tasks_.erase(tasks_.begin() + idx);
+}
+
 void Converter::removeCompleted() {
     std::lock_guard<std::mutex> lk(m_);
     tasks_.erase(std::remove_if(tasks_.begin(), tasks_.end(),

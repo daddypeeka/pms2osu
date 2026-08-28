@@ -42,6 +42,7 @@ public:
     void setOptions(const Options& o);
     bool addFolder(const std::string& dir);       // one pms folder -> one task
     void clearTasks();
+    void removeTask(size_t idx);                  // remove one task by index
     void removeCompleted();                       // drop done/canceled tasks
     size_t taskCount() const;
     std::vector<Task> snapshot() const;
