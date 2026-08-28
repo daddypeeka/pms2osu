@@ -54,6 +54,18 @@ cmake -S . -B build && cmake --build build
 The Ogg Vorbis codec is always built from `third_party`, so no external audio
 dependencies are required.
 
+## CI / Releases
+
+`.github/workflows/build.yml` builds and packages the app on all three
+platforms:
+
+- **Windows** — MinGW-w64 (`make`), output `dist/pms2osu-v2.exe`
+- **macOS** — Homebrew GLFW + CMake, output `dist/pms2osu-v2-macos`
+- **Linux** — `libglfw3-dev` + CMake, output `dist/pms2osu-v2-linux`
+
+Every push/PR uploads each binary as a build artifact. Pushing a `v*` tag (e.g.
+`v1.0.0`) also creates a GitHub Release with all three binaries attached.
+
 ## Notes
 
 - PMS/BMS files are usually Shift-JIS encoded; the parser decodes them to UTF-8

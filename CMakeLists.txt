@@ -69,8 +69,9 @@ if(WIN32)
         opengl32 gdi32 user32 shell32 ole32 uuid imm32 winmm
     )
 else()
+    find_package(OpenGL REQUIRED)
     find_package(GLFW3 REQUIRED)
-    target_link_libraries(pms2osu-v2 PRIVATE glfw ${OpenGL_LIBRARIES})
+    target_link_libraries(pms2osu-v2 PRIVATE glfw OpenGL::GL)
 endif()
 
 # GLFW is linked statically (libglfw3.a), so no glfw3.dll is needed next to
