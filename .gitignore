@@ -1,0 +1,28 @@
+# ---- Build output ----
+/build/
+/dist/
+
+# Compiled objects / binaries
+*.o
+*.obj
+
+# Runtime / generated data
+imgui.ini
+/export/
+*.osz
+*.ogg
+*.wav
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE / editor
+.vscode/
+.idea/
+*.suo
+*.user
+
+# Local toolchains (not part of the source tree)
+/.tools/
