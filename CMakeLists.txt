@@ -73,6 +73,9 @@ if(WIN32)
         third_party/glfw/lib-mingw-w64/libglfw3.a
         opengl32 gdi32 user32 shell32 ole32 uuid imm32 winmm
     )
+    # Self-contained exe: statically link libgcc / libstdc++ / libwinpthread so
+    # no MinGW runtime DLLs are required next to the exe.
+    target_link_options(pms2osu-v2 PRIVATE -static -static-libgcc -static-libstdc++)
 else()
     find_package(OpenGL REQUIRED)
     # Debian/Ubuntu and Homebrew both ship the config as lowercase "glfw3"
