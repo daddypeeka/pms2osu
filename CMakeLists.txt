@@ -63,6 +63,7 @@ add_executable(pms2osu-v2 ${SOURCES})
 target_include_directories(pms2osu-v2 PRIVATE
     src
     ${IMGUI}
+    ${IMGUI_BACKENDS}
     third_party/glfw/include
 )
 target_link_libraries(pms2osu-v2 PRIVATE imgui vorbis ogg)

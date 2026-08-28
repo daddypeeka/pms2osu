@@ -215,7 +215,7 @@ void App::RenderMenuBar() {
 
 void App::RenderScanPanel() {
     ImGui::SeparatorText(tr("Input", "输入"));
-    ImGui::TextWrapped(tr(
+    ImGui::TextWrapped("%s", tr(
         "Drop your PMS (a folder contains multiple pms folders, single pms folder, or .pms file)",
         "拖入你的 PMS（一个包含多个 pms 文件夹的文件夹、单个 pms 文件夹，或 .pms 文件）"));
     // Keep the single Import button on the same line as the path box.
@@ -251,7 +251,7 @@ void App::RenderTasks() {
     ImGui::SeparatorText(tr("Tasks", "任务"));
     auto tasks = conv_.snapshot();
     if (tasks.empty()) {
-        ImGui::TextDisabled(tr("(no tasks)", "（无任务）"));
+        ImGui::TextDisabled("%s", tr("(no tasks)", "（无任务）"));
         return;
     }
     if (ImGui::BeginTable("tasks", 4,
