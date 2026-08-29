@@ -70,8 +70,6 @@ dependencies are required.
   output `dist/pms2osu-v2-windows-x64.exe`
 - **Windows x86 (32-bit)** — MinGW-w32 `MINGW32` (i686 GCC, GLFW built
   from source), output `dist/pms2osu-v2-windows-x86.exe`
-- **macOS x64** — Intel runner (`macos-13`), Homebrew GLFW + CMake,
-  output `dist/pms2osu-v2-macos-x64`
 - **Linux x64** — `libglfw3-dev` + CMake, output `dist/pms2osu-v2-linux-x64`
 - **Linux x86 (32-bit)** — i386 Debian container, output
   `dist/pms2osu-v2-linux-x86`

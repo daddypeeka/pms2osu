@@ -31,12 +31,6 @@ jobs:
             artifact_name: pms2osu-v2-windows-x64
             binary_path: dist/pms2osu-v2-windows-x64.exe
 
-          - name: macOS x64 (Intel)
-            os: macos-13
-            arch: x64
-            artifact_name: pms2osu-v2-macos-x64
-            binary_path: dist/pms2osu-v2-macos-x64
-
           - name: Linux x64
             os: ubuntu-latest
             arch: x64
@@ -200,7 +194,6 @@ jobs:
           files: |
             artifacts/pms2osu-v2-windows-x64/pms2osu-v2-windows-x64.exe
             artifacts/pms2osu-v2-windows-x86/pms2osu-v2-windows-x86.exe
-            artifacts/pms2osu-v2-macos-x64/pms2osu-v2-macos-x64
             artifacts/pms2osu-v2-linux-x64/pms2osu-v2-linux-x64
             artifacts/pms2osu-v2-linux-x86/pms2osu-v2-linux-x86
             artifacts/pms2osu-v2-macos-arm64/pms2osu-v2-macos-arm64
