@@ -19,20 +19,63 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: Windows (MinGW-w64)
+          # ---- x64 (64-bit Intel/AMD, the default) ----
+          - name: Windows x64 (MinGW-w64)
             os: windows-latest
-            artifact_name: pms2osu-v2-windows
-            binary_path: dist/pms2osu-v2.exe
+            arch: x64
+            msystem: MINGW64
+            msys_packages: >-
+              mingw-w64-x86_64-gcc
+              make
+            build_system: make
+            artifact_name: pms2osu-v2-windows-x64
+            binary_path: dist/pms2osu-v2-windows-x64.exe
 
-          - name: macOS
-            os: macos-latest
-            artifact_name: pms2osu-v2-macos
-            binary_path: dist/pms2osu-v2-macos
+          - name: macOS x64 (Intel)
+            os: macos-13
+            arch: x64
+            artifact_name: pms2osu-v2-macos-x64
+            binary_path: dist/pms2osu-v2-macos-x64
 
-          - name: Linux
+          - name: Linux x64
             os: ubuntu-latest
-            artifact_name: pms2osu-v2-linux
-            binary_path: dist/pms2osu-v2-linux
+            arch: x64
+            artifact_name: pms2osu-v2-linux-x64
+            binary_path: dist/pms2osu-v2-linux-x64
+
+          # ---- x86 (32-bit) ----
+          - name: Windows x86 (MinGW-w32)
+            os: windows-latest
+            arch: x86
+            msystem: MINGW32
+            msys_packages: >-
+              mingw-w64-i686-gcc
+              mingw-w64-i686-glfw
+              make
+              cmake
+            build_system: cmake
+            artifact_name: pms2osu-v2-windows-x86
+            binary_path: dist/pms2osu-v2-windows-x86.exe
+
+          - name: Linux x86 (i386)
+            os: ubuntu-latest
+            arch: x86
+            build_system: docker
+            artifact_name: pms2osu-v2-linux-x86
+            binary_path: dist/pms2osu-v2-linux-x86
+
+          # ---- arm64 (Apple Silicon / ARM64 Linux) ----
+          - name: macOS arm64 (Apple Silicon)
+            os: macos-14
+            arch: arm64
+            artifact_name: pms2osu-v2-macos-arm64
+            binary_path: dist/pms2osu-v2-macos-arm64
+
+          - name: Linux arm64
+            os: ubuntu-24.04-arm
+            arch: arm64
+            artifact_name: pms2osu-v2-linux-arm64
+            binary_path: dist/pms2osu-v2-linux-arm64
 
     steps:
       - name: Checkout
@@ -42,14 +85,12 @@ jobs:
         if: runner.os == 'Windows'
         uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
+          msystem: ${{ matrix.msystem }}
           update: true
-          install: >-
-            mingw-w64-x86_64-gcc
-            make
+          install: ${{ matrix.msys_packages }}
 
       - name: Install dependencies (Linux)
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && matrix.build_system != 'docker'
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake libglfw3-dev
@@ -58,16 +99,46 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install glfw
 
-      - name: Build (Windows)
-        if: runner.os == 'Windows'
+      - name: Build (Windows, Make)
+        if: runner.os == 'Windows' && matrix.build_system == 'make'
         shell: msys2 {0}
         run: make
 
+      - name: Build (Windows, CMake / 32-bit)
+        if: runner.os == 'Windows' && matrix.build_system == 'cmake'
+        shell: msys2 {0}
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DPMS2OSU_USE_BUNDLED_GLFW=OFF
+          cmake --build build --config Release -j
+
       - name: Build (Linux / macOS)
-        if: runner.os != 'Windows'
+        if: runner.os != 'Windows' && matrix.build_system != 'docker'
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --config Release -j
+
+      - name: Build (Linux x86 in i386 container)
+        if: runner.os == 'Linux' && matrix.build_system == 'docker'
+        run: |
+          docker run --rm --platform linux/386 \
+            -v "$PWD":/src -w /src \
+            i386/debian:bookworm-slim bash -euc '
+              apt-get update
+              apt-get install -y --no-install-recommends cmake build-essential libglfw3-dev
+              cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+              cmake --build build --config Release -j
+            '
+
+      - name: Stage binary (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          mkdir -p dist
+          if [ -f dist/pms2osu-v2.exe ]; then
+            mv dist/pms2osu-v2.exe "${{ matrix.binary_path }}"
+          else
+            mv build/pms2osu-v2.exe "${{ matrix.binary_path }}"
+          fi
 
       - name: Stage binary (Linux / macOS)
         if: runner.os != 'Windows'
@@ -106,7 +177,11 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            artifacts/pms2osu-v2-windows/pms2osu-v2.exe
-            artifacts/pms2osu-v2-macos/pms2osu-v2-macos
-            artifacts/pms2osu-v2-linux/pms2osu-v2-linux
+            artifacts/pms2osu-v2-windows-x64/pms2osu-v2-windows-x64.exe
+            artifacts/pms2osu-v2-windows-x86/pms2osu-v2-windows-x86.exe
+            artifacts/pms2osu-v2-macos-x64/pms2osu-v2-macos-x64
+            artifacts/pms2osu-v2-linux-x64/pms2osu-v2-linux-x64
+            artifacts/pms2osu-v2-linux-x86/pms2osu-v2-linux-x86
+            artifacts/pms2osu-v2-macos-arm64/pms2osu-v2-macos-arm64
+            artifacts/pms2osu-v2-linux-arm64/pms2osu-v2-linux-arm64
           generate_release_notes: true

@@ -63,12 +63,17 @@ OBJS := $(BUILD)/app_main.o $(BUILD)/app_app.o $(BUILD)/app_convert.o \
         $(BUILD)/vorbis_lookup.o $(BUILD)/vorbis_bitrate.o \
         $(BUILD)/vorbis_vorbisenc.o $(BUILD)/vorbis_vorbisfile.o
 
+# GLFW library directory. Defaults to the bundled 64-bit (x86_64) MinGW-w64
+# archive. For a 32-bit (x86) build point this at a 32-bit GLFW, e.g. inside
+# MSYS2 MINGW32:  make GLFW_LIB=/mingw32/lib
+GLFW_LIB ?= $(GLFW)/lib-mingw-w64
+
 # Statically link the MinGW runtime (libgcc / libstdc++ / libwinpthread) so the
 # exe is fully self-contained and does not need libgcc_s_seh-1.dll,
 # libstdc++-6.dll or libwinpthread-1.dll next to it.
 # -mwindows links as a GUI-subsystem app so no console window appears when the
 # app is launched; the CLI mode still works when run from a terminal.
-LDFLAGS := -L$(GLFW)/lib-mingw-w64 -mwindows -static -static-libgcc -static-libstdc++
+LDFLAGS := -L$(GLFW_LIB) -mwindows -static -static-libgcc -static-libstdc++
 LDLIBS  := -lglfw3 -lopengl32 -lgdi32 -luser32 -lshell32 -lole32 -luuid -limm32 -lwinmm -lwinpthread
 
 all: $(BIN)/pms2osu-v2.exe

@@ -63,15 +63,39 @@ dependencies are required.
 
 ## CI / Releases
 
-`.github/workflows/build.yml` builds and packages the app on all three
-platforms:
+`.github/workflows/build.yml` builds and packages the app for **x64**,
+**x86 (32-bit)** and **arm64** architectures:
 
-- **Windows** — MinGW-w64 (`make`), output `dist/pms2osu-v2.exe`
-- **macOS** — Homebrew GLFW + CMake, output `dist/pms2osu-v2-macos`
-- **Linux** — `libglfw3-dev` + CMake, output `dist/pms2osu-v2-linux`
+- **Windows x64** — MinGW-w64 `MINGW64` (`make` + bundled GLFW),
+  output `dist/pms2osu-v2-windows-x64.exe`
+- **Windows x86 (32-bit)** — MinGW-w32 `MINGW32` (i686 GCC + system
+  `mingw-w64-i686-glfw`, CMake), output `dist/pms2osu-v2-windows-x86.exe`
+- **macOS x64** — Intel runner (`macos-13`), Homebrew GLFW + CMake,
+  output `dist/pms2osu-v2-macos-x64`
+- **Linux x64** — `libglfw3-dev` + CMake, output `dist/pms2osu-v2-linux-x64`
+- **Linux x86 (32-bit)** — i386 Debian container, output
+  `dist/pms2osu-v2-linux-x86`
+- **macOS arm64** — Apple Silicon runner (`macos-14`), output
+  `dist/pms2osu-v2-macos-arm64`
+- **Linux arm64** — ARM64 runner (`ubuntu-24.04-arm`), output
+  `dist/pms2osu-v2-linux-arm64`
 
 Every push/PR uploads each binary as a build artifact. Pushing a `v*` tag (e.g.
-`v1.0.0`) also creates a GitHub Release with all three binaries attached.
+`v1.0.0`) also creates a GitHub Release with all the binaries attached.
+
+### Building the 32-bit Windows version locally
+
+The bundled GLFW archive (`third_party/glfw/lib-mingw-w64/libglfw3.a`) is
+**64-bit only**, so the 32-bit build links the system GLFW instead. Inside an
+MSYS2 **MINGW32** shell (with `mingw-w64-i686-gcc`, `mingw-w64-i686-glfw` and
+`make` installed):
+
+```
+make GLFW_LIB=/mingw32/lib
+# or, via CMake:
+cmake -S . -B build32 -DCMAKE_BUILD_TYPE=Release -DPMS2OSU_USE_BUNDLED_GLFW=OFF
+cmake --build build32 --config Release -j
+```
 
 ## Notes
 

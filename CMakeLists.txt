@@ -71,13 +71,30 @@ target_include_directories(pms2osu-v2 PRIVATE
 )
 target_link_libraries(pms2osu-v2 PRIVATE imgui vorbis ogg)
 
+# By default Windows links the bundled MinGW-w64 GLFW static archive
+# (third_party/glfw/lib-mingw-w64/libglfw3.a), which is 64-bit (x86_64 / x64)
+# only. Set -DPMS2OSU_USE_BUNDLED_GLFW=OFF to link the system GLFW instead,
+# e.g. when cross-building a 32-bit (x86) Windows binary with MSYS2 MINGW32
+# (mingw-w64-i686-glfw).
+option(PMS2OSU_USE_BUNDLED_GLFW "Use the bundled MinGW-w64 GLFW static library on Windows" ON)
+
 if(WIN32)
-    # Use an absolute path so CMake treats the archive as a file, not as a
-    # "-l<name>" library to search for.
-    target_link_libraries(pms2osu-v2 PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/glfw/lib-mingw-w64/libglfw3.a
-        opengl32 gdi32 user32 shell32 ole32 uuid imm32 winmm
-    )
+    if(PMS2OSU_USE_BUNDLED_GLFW AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/glfw/lib-mingw-w64/libglfw3.a")
+        # Use an absolute path so CMake treats the archive as a file, not as a
+        # "-l<name>" library to search for.
+        target_link_libraries(pms2osu-v2 PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/glfw/lib-mingw-w64/libglfw3.a
+            opengl32 gdi32 user32 shell32 ole32 uuid imm32 winmm
+        )
+    else()
+        # 32-bit (x86) or any Windows build without the bundled archive:
+        # use the system GLFW (e.g. MSYS2 mingw-w64-i686-glfw).
+        find_package(glfw3 REQUIRED)
+        target_link_libraries(pms2osu-v2 PRIVATE
+            glfw
+            opengl32 gdi32 user32 shell32 ole32 uuid imm32 winmm
+        )
+    endif()
     # Self-contained exe: statically link libgcc / libstdc++ / libwinpthread so
     # no MinGW runtime DLLs are required next to the exe.
     target_link_options(pms2osu-v2 PRIVATE -static -static-libgcc -static-libstdc++)
