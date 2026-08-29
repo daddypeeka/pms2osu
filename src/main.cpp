@@ -4,7 +4,7 @@
 #include <vector>
 
 // Single source of truth for the app version (kept in sync with the git tag).
-static const char* const kVersion = "0.3.1";
+static const char* const kVersion = "0.4.0";
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
