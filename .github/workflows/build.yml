@@ -49,11 +49,14 @@ jobs:
             arch: x86
             msystem: MINGW32
             # MSYS2 ships no mingw-w64-i686-glfw package, so GLFW is built
-            # from source below (git is used to fetch it).
+            # from source below (git is used to fetch it). Use the MinGW-w64
+            # native cmake (mingw-w64-i686-cmake), NOT the MSYS-native "cmake":
+            # the MSYS cmake detects the platform as Unix (so GLFW would try the
+            # X11/Wayland backend) and lacks the "MSYS Makefiles" generator.
             msys_packages: >-
               mingw-w64-i686-gcc
               make
-              cmake
+              mingw-w64-i686-cmake
               git
             build_system: cmake
             artifact_name: pms2osu-v2-windows-x86
