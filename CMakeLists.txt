@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(pms2osu-v2 VERSION 0.3.0 C CXX)
+project(pms2osu-v2 VERSION 0.3.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -72,8 +72,10 @@ target_include_directories(pms2osu-v2 PRIVATE
 target_link_libraries(pms2osu-v2 PRIVATE imgui vorbis ogg)
 
 if(WIN32)
+    # Use an absolute path so CMake treats the archive as a file, not as a
+    # "-l<name>" library to search for.
     target_link_libraries(pms2osu-v2 PRIVATE
-        third_party/glfw/lib-mingw-w64/libglfw3.a
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/glfw/lib-mingw-w64/libglfw3.a
         opengl32 gdi32 user32 shell32 ole32 uuid imm32 winmm
     )
     # Self-contained exe: statically link libgcc / libstdc++ / libwinpthread so
