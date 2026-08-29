@@ -40,7 +40,8 @@ public:
     Converter& operator=(const Converter&) = delete;
 
     void setOptions(const Options& o);
-    bool addFolder(const std::string& dir);       // one pms folder -> one task
+    bool addFolder(const std::string& dir);       // one pms folder -> one task (deduped)
+    bool hasFolder(const std::string& dir) const; // true if a task already uses this folder
     void clearTasks();
     void removeTask(size_t idx);                  // remove one task by index
     void removeCompleted();                       // drop done/canceled tasks

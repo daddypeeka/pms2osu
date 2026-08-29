@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(pms2osu-v2 C CXX)
+project(pms2osu-v2 VERSION 0.3.0 C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -59,7 +59,10 @@ target_include_directories(vorbis PUBLIC
 )
 target_link_libraries(vorbis PUBLIC ogg)
 
-add_executable(pms2osu-v2 ${SOURCES})
+# WIN32 marks the executable as a Windows GUI-subsystem app (no console window
+# on launch). It is ignored on non-Windows platforms. The --convert CLI still
+# prints to stdout/stderr when launched from a terminal.
+add_executable(pms2osu-v2 WIN32 ${SOURCES})
 target_include_directories(pms2osu-v2 PRIVATE
     src
     ${IMGUI}

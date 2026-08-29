@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cstdio>
 #include <filesystem>
-#include <random>
 
 #include "ogg.h"
 #include "osu.h"
@@ -28,11 +27,23 @@ bool Converter::addFolder(const std::string& dir) {
     auto pms = util::listFiles(dir, ".pms", false);
     if (pms.empty()) return false;
     std::lock_guard<std::mutex> lk(m_);
+    // Avoid adding the same folder more than once.
+    std::string lower = util::toLower(dir);
+    for (const auto& t : tasks_)
+        if (util::toLower(t.srcDir) == lower) return false;
     Task t;
     t.srcDir = dir;
     t.pmsFiles = std::move(pms);
     tasks_.push_back(std::move(t));
     return true;
+}
+
+bool Converter::hasFolder(const std::string& dir) const {
+    std::lock_guard<std::mutex> lk(m_);
+    std::string lower = util::toLower(dir);
+    for (const auto& t : tasks_)
+        if (util::toLower(t.srcDir) == lower) return true;
+    return false;
 }
 
 void Converter::clearTasks() {
@@ -119,17 +130,6 @@ void Converter::drainLog(std::vector<std::string>& out) {
     }
 }
 
-std::string makeWorkDir() {
-    static std::mt19937 rng(std::random_device{}());
-    for (int attempt = 0; attempt < 16; ++attempt) {
-        std::string d;
-        for (int i = 0; i < 8; ++i) d += "0123456789abcdef"[rng() & 15];
-        std::string p = util::joinPath(util::tempDir(), "pms2osu_v2_" + d);
-        if (!util::dirExists(p)) return p;
-    }
-    return util::joinPath(util::tempDir(), "pms2osu_v2_work");
-}
-
 void Converter::worker() {
     std::vector<Task> tasks;
     {
@@ -204,17 +204,14 @@ bool Converter::runTaskImpl(Task& t) {
         o = opts_;
     }
 
-    std::string workDir = makeWorkDir();
     std::error_code ec;
-    fs::create_directories(fs::u8path(workDir), ec);
-
     std::vector<zip::Entry> entries;
     std::string audioPms;
     if (!t.pmsFiles.empty()) audioPms = t.pmsFiles[0];
 
     // ---- render audio.ogg from the first (main) pms ----
+    // Encoded straight into memory: no temp file, no disk round-trip.
     bool audioOk = false;
-    std::string audioPath = util::joinPath(workDir, "audio.ogg");
     if (!audioPms.empty()) {
         log("  render audio: " + util::fileName(audioPms));
         pms::Chart chart = pms::parseFile(audioPms);
@@ -229,9 +226,16 @@ bool Converter::runTaskImpl(Task& t) {
         std::string rerr;
         std::vector<float> pcm = pms::renderStereo(chart, ropt, rate, frames, &rerr);
         if (!pcm.empty()) {
-            std::string oerr;
-            audioOk = vorbis_wrap::writeOgg(audioPath, pcm, rate, 2, frames, 192000, 0.5f, &oerr);
-            if (!audioOk) log("    ogg encode failed: " + oerr);
+            std::string oggData, oerr;
+            audioOk = vorbis_wrap::writeOggMem(pcm, rate, 2, frames, 192000, 0.5f,
+                                               &oggData, &oerr);
+            if (!audioOk) {
+                log("    ogg encode failed: " + oerr);
+            } else {
+                entries.push_back({"audio.ogg", std::move(oggData)});
+                log("    audio.ogg (" +
+                    std::to_string((int)(entries.back().data.size() / 1024)) + " KB)");
+            }
         } else {
             log("    render failed");
         }
@@ -239,12 +243,12 @@ bool Converter::runTaskImpl(Task& t) {
     if (!audioOk) {
         // fallback: a tiny silent audio so the osz is still valid
         std::vector<float> silent(2 * 44100, 0.f);
-        audioOk = vorbis_wrap::writeOgg(audioPath, silent, 44100, 2, 44100, 192000, 0.5f, nullptr);
-    }
-    if (audioOk) {
-        std::string data = util::readFile(audioPath);
-        entries.push_back({"audio.ogg", std::move(data)});
-        log("    audio.ogg (" + std::to_string((int)(util::readFile(audioPath).size() / 1024)) + " KB)");
+        std::string oggData;
+        if (vorbis_wrap::writeOggMem(silent, 44100, 2, 44100, 192000, 0.5f,
+                                     &oggData, nullptr)) {
+            entries.push_back({"audio.ogg", std::move(oggData)});
+            audioOk = true;
+        }
     }
 
     // ---- build one .osu per pms ----
@@ -300,13 +304,11 @@ bool Converter::runTaskImpl(Task& t) {
     if (!zip::writeZip(oszPath, entries, &zerr)) {
         t.msg = "zip failed: " + zerr;
         log("  [error] " + t.msg);
-        util::removeDirRecursive(workDir);
         return false;
     }
     t.oszPath = oszPath;
     t.msg = "OK (" + std::to_string(okCount) + " charts)";
     log("  -> " + oszPath);
-    util::removeDirRecursive(workDir);
     return true;
 }
 

@@ -120,7 +120,6 @@ std::string buildOsuText(const pms::Chart& chart, const pms::Timing& timing,
 
     // ---- HitObjects ----
     out += "[HitObjects]\n";
-    std::string fmt;
     double colWidth = 512.0 / keyCount;
     for (const auto& n : pms::collectNotes(chart, timing)) {
         int x = (int)std::llround((n.track + 0.5) * colWidth);

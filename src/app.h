@@ -26,7 +26,7 @@ private:
     void RenderScanPanel();
     void RenderTasks();
     void RenderOptions();
-    void RenderLog();
+    void RenderProgress();
     std::string pickFolder(const char* title);
     const char* tr(const char* en, const char* zh) const;   // 0 = English, 1 = 中文
 

@@ -128,8 +128,13 @@ void App::addDroppedPath(const std::string& path) {
         // If this folder directly contains .pms files, treat as one task.
         auto pms = util::listFiles(p, ".pms", false);
         if (!pms.empty()) {
-            if (conv_.addFolder(p)) log("[drop] + " + p);
-            else log("[drop] no .pms in " + p);
+            if (conv_.hasFolder(p)) {
+                log("[skip] already added: " + p);
+            } else if (conv_.addFolder(p)) {
+                log("[drop] + " + p);
+            } else {
+                log("[drop] no .pms in " + p);
+            }
         } else {
             // Otherwise scan sub-folders.
             auto dirs = util::listDirsContainingPms(p);
@@ -137,15 +142,24 @@ void App::addDroppedPath(const std::string& path) {
                 log("[drop] no pms folder found in " + p);
                 return;
             }
-            for (const auto& d : dirs)
-                if (conv_.addFolder(d)) log("[drop] + " + d);
+            for (const auto& d : dirs) {
+                if (conv_.hasFolder(d)) {
+                    log("[skip] already added: " + d);
+                } else if (conv_.addFolder(d)) {
+                    log("[drop] + " + d);
+                }
+            }
         }
     } else {
         // A dropped file: use its containing folder.
         std::string low = util::toLower(p);
         if (low.size() > 4 && low.compare(low.size() - 4, 4, ".pms") == 0) {
             std::string d = util::dirName(p);
-            if (!d.empty() && conv_.addFolder(d)) log("[drop] + " + d);
+            if (conv_.hasFolder(d)) {
+                log("[skip] already added: " + d);
+            } else if (!d.empty() && conv_.addFolder(d)) {
+                log("[drop] + " + d);
+            }
         } else {
             log("[drop] ignored: " + p);
         }
@@ -189,7 +203,7 @@ void App::Render() {
     RenderOptions();
     RenderScanPanel();
     RenderTasks();
-    RenderLog();
+    RenderProgress();
 
     ImGui::End();
 }
@@ -218,79 +232,82 @@ void App::RenderScanPanel() {
     ImGui::TextWrapped("%s", tr(
         "Drop your PMS (a folder contains multiple pms folders, single pms folder, or .pms file)",
         "拖入你的 PMS（一个包含多个 pms 文件夹的文件夹、单个 pms 文件夹，或 .pms 文件）"));
-    // Keep the single Import button on the same line as the path box.
-    // Measure its actual width (CJK font aware) and let the path box take the
-    // remaining space so nothing overflows.
-    const char* bImport = tr("Import path", "导入路径");
+    const char* bBrowse = tr("Browse...", "浏览...");
     const ImGuiStyle& style = ImGui::GetStyle();
     float padX = style.FramePadding.x * 2.0f;
-    float wImport = ImGui::CalcTextSize(bImport).x + padX;
+    float wBrowse = ImGui::CalcTextSize(bBrowse).x + padX;
     float spacing = style.ItemSpacing.x;
-
     float avail = ImGui::GetContentRegionAvail().x;
-    float inputW = avail - wImport - spacing - 4.0f;
-    if (inputW > 500) inputW = 500;   // keep the path box from getting too long
-    if (inputW < 0) inputW = 0;       // extremely narrow window: button takes priority
-    ImGui::SetNextItemWidth(inputW);
-    ImGui::InputText(tr("manual path", "路径"), manualDirBuf_, sizeof(manualDirBuf_));
-    ImGui::SameLine();
-    if (ImGui::Button(bImport)) {
-        std::string p = manualDirBuf_;
-        if (p.empty()) {
-            // No path typed yet: let the user pick a PMS folder directly,
-            // so clicking Import always does something.
-            p = pickFolder("Import PMS folder");
-            if (p.empty()) return;   // dialog canceled
-            std::snprintf(manualDirBuf_, sizeof(manualDirBuf_), "%s", p.c_str());
-        }
+
+    // Auto-layout: keep the (read-only) path box and the Browse button on one
+    // line when the window is wide enough; stack them when it gets too narrow.
+    // Clicking Browse always opens the folder picker (same dialog as the output
+    // directory Browse), and the picked folder is added without duplicates.
+    const float minInput = 120.0f;
+    const ImGuiInputTextFlags ro = ImGuiInputTextFlags_ReadOnly;
+
+    auto browseAndAdd = [&]() {
+        std::string p = pickFolder(tr("Select PMS folder", "选择 PMS 文件夹"));
+        if (p.empty()) return;   // dialog canceled
+        std::snprintf(manualDirBuf_, sizeof(manualDirBuf_), "%s", p.c_str());
         addDroppedPath(p);
+    };
+
+    if (avail >= wBrowse + minInput + spacing) {
+        float inputW = avail - wBrowse - spacing - 4.0f;
+        if (inputW > 500) inputW = 500;   // keep the path box from getting too long
+        ImGui::SetNextItemWidth(inputW);
+        ImGui::InputText(tr("manual path", "路径"), manualDirBuf_, sizeof(manualDirBuf_), ro);
+        ImGui::SameLine();
+        ImGui::PushID("browseInput");
+        if (ImGui::Button(bBrowse)) browseAndAdd();
+        ImGui::PopID();
+    } else {
+        ImGui::SetNextItemWidth(avail);
+        ImGui::InputText(tr("manual path", "路径"), manualDirBuf_, sizeof(manualDirBuf_), ro);
+        ImGui::PushID("browseInput");
+        if (ImGui::Button(bBrowse)) browseAndAdd();
+        ImGui::PopID();
     }
 }
 
 void App::RenderTasks() {
     ImGui::SeparatorText(tr("Tasks", "任务"));
-    auto tasks = conv_.snapshot();
-    if (tasks.empty()) {
-        ImGui::TextDisabled("%s", tr("(no tasks)", "（无任务）"));
+
+    // Reserve vertical space at the bottom for the progress box; the task
+    // table (the main body) takes all the remaining height.
+    const float kProgressH = 100.0f;
+    if (!ImGui::BeginChild("##taskbody", ImVec2(0, -kProgressH), false)) {
+        ImGui::EndChild();
         return;
     }
-    if (ImGui::BeginTable("tasks", 4,
-                          ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY,
-                          ImVec2(0, 180))) {
+
+    auto tasks = conv_.snapshot();
+    std::vector<size_t> toDelete;
+    if (tasks.empty()) {
+        ImGui::TextDisabled("%s", tr("(no tasks)", "（无任务）"));
+    } else if (ImGui::BeginTable("tasks", 5,
+                                 ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+                                     ImGuiTableFlags_ScrollY,
+                                 ImVec2(0, 0))) {
         ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 24);
         ImGui::TableSetupColumn(tr("Folder", "文件夹"), ImGuiTableColumnFlags_WidthStretch, 0);
         ImGui::TableSetupColumn(tr("Status", "状态"), ImGuiTableColumnFlags_WidthFixed, 90);
         ImGui::TableSetupColumn(tr("Result", "结果"), ImGuiTableColumnFlags_WidthStretch, 0);
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 48);
         ImGui::TableHeadersRow();
         for (size_t i = 0; i < tasks.size(); ++i) {
             ImGui::PushID((int)i);
             ImGui::TableNextRow();
-            // Invisible full-row hit area for the right-click context menu.
-            // Header colors are pushed transparent so no hover highlight shows.
-            ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0, 0, 0, 0));
-            ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0, 0, 0, 0));
-            ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0, 0, 0, 0));
+
             ImGui::TableSetColumnIndex(0);
-            ImGui::Selectable("##row", false, ImGuiSelectableFlags_SpanAllColumns);
-            ImGui::PopStyleColor(3);
-            if (ImGui::BeginPopupContextItem("##taskctx")) {
-                if (ImGui::MenuItem(tr("Delete task", "删除任务"))) conv_.removeTask(i);
-                if (ImGui::MenuItem(tr("Delete all tasks", "删除全部任务"))) conv_.clearTasks();
-                ImGui::EndPopup();
-            }
-            // Cell contents (submitted after the selectable so they stay clickable).
-            ImGui::TableSetColumnIndex(0);
-            // Center the checkbox in its narrow column (the checkbox already
-            // drives the row height, so vertical alignment is automatic).
-            float cbSize = ImGui::GetFrameHeight();
-            float colW = ImGui::GetColumnWidth(0);
-            float xOff = (colW - cbSize) * 0.5f;
-            if (xOff > 0) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + xOff);
             bool en = tasks[i].enabled;
             if (ImGui::Checkbox(("##en" + std::to_string(i)).c_str(), &en))
                 conv_.setTaskEnabled(i, en);
+
             ImGui::TableNextColumn();
             ImGui::TextUnformatted(tasks[i].srcDir.c_str());
+
             ImGui::TableNextColumn();
             const char* st = tr("ready", "就绪");
             switch (tasks[i].status) {
@@ -301,58 +318,97 @@ void App::RenderTasks() {
                 default: break;
             }
             ImGui::TextUnformatted(st);
+
             ImGui::TableNextColumn();
             ImGui::TextUnformatted(tasks[i].msg.c_str());
+
+            ImGui::TableNextColumn();
+            if (ImGui::SmallButton(tr("Del", "删"))) toDelete.push_back(i);
+
             ImGui::PopID();
         }
         ImGui::EndTable();
     }
-    ImGui::Text(tr("Progress: %d%%   Current: %s", "进度：%d%%   当前：%s"),
-                conv_.progress(), conv_.currentTask().c_str());
+    ImGui::EndChild();
+
+    // Apply deletions after the loop so snapshot indices stay valid.
+    for (auto it = toDelete.rbegin(); it != toDelete.rend(); ++it)
+        conv_.removeTask(*it);
 }
 
 void App::RenderOptions() {
     ImGui::SeparatorText(tr("Options (one-click apply)", "选项（一键应用）"));
 
-    // Row 1: metadata inputs (label first, then input box).
-    // Creator / OD / HP, no AR (osu!mania ignores ApproachRate).
+    const ImGuiStyle& st = ImGui::GetStyle();
+    const float sp = st.ItemSpacing.x;
+
+    // Row 1: Creator / OD / HP / Normalize. Items wrap onto new lines when the
+    // window is too narrow so nothing ever overflows the right edge.
     ImGui::TextUnformatted(tr("Creator", "制作人"));
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(130);
+    ImGui::SetNextItemWidth(120);
     ImGui::InputText("##creator", creatorBuf_, sizeof(creatorBuf_));
-    ImGui::SameLine();
+
+    const float wOd = ImGui::CalcTextSize("OD").x + sp + 70;
+    if (ImGui::GetContentRegionAvail().x < wOd) ImGui::NewLine(); else ImGui::SameLine();
     ImGui::TextUnformatted("OD");
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(80);
+    ImGui::SetNextItemWidth(70);
     ImGui::InputText("##od", odBuf_, sizeof(odBuf_));
-    ImGui::SameLine();
+
+    const float wHp = ImGui::CalcTextSize("HP").x + sp + 70;
+    if (ImGui::GetContentRegionAvail().x < wHp) ImGui::NewLine(); else ImGui::SameLine();
     ImGui::TextUnformatted("HP");
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(80);
+    ImGui::SetNextItemWidth(70);
     ImGui::InputText("##hp", hpBuf_, sizeof(hpBuf_));
-    ImGui::SameLine();
+
+    const float wNorm = ImGui::CalcTextSize(tr("Normalize audio", "音频归一化")).x +
+                        sp + ImGui::GetFrameHeight();
+    if (ImGui::GetContentRegionAvail().x < wNorm) ImGui::NewLine(); else ImGui::SameLine();
     ImGui::Checkbox(tr("Normalize audio", "音频归一化"), &normalize_);
 
-    // Row 2: output directory (label before the box)
+    // Row 2: output directory (label before the box, read-only — set via Browse)
     ImGui::TextUnformatted(tr("Output dir", "输出目录"));
-    ImGui::SameLine();
+    const float wOut = ImGui::CalcTextSize(tr("Output dir", "输出目录")).x + sp + 100;
+    if (ImGui::GetContentRegionAvail().x < wOut) ImGui::NewLine(); else ImGui::SameLine();
     float outW = ImGui::GetContentRegionAvail().x;
     if (outW < 100) outW = 100;
+    if (outW > 500) outW = 500;
     ImGui::SetNextItemWidth(outW);
-    ImGui::InputText("##outdir", outBuf_, sizeof(outBuf_));
+    ImGui::InputText("##outdir", outBuf_, sizeof(outBuf_), ImGuiInputTextFlags_ReadOnly);
 
     // Row 3: Browse + export (export button fills the remaining width)
+    ImGui::PushID("browseOutput");
     if (ImGui::Button(tr("Browse...", "浏览..."))) DoBrowseOutput();
+    ImGui::PopID();
     ImGui::SameLine();
     float avail = ImGui::GetContentRegionAvail().x;
-    if (ImGui::Button(running_ ? tr("Stop", "停止") : tr("Export .osz", "导出 .osz"), ImVec2(avail, 0)))
+    if (avail < 60) {   // too narrow: move Export onto its own line
+        ImGui::NewLine();
+        avail = ImGui::GetContentRegionAvail().x;
+    }
+    if (ImGui::Button(running_ ? tr("Stop", "停止") : tr("Export .osz", "导出 .osz"),
+                      ImVec2(avail, 0)))
         running_ ? DoStop() : DoStart();
 }
 
-void App::RenderLog() {
-    ImGui::SeparatorText(tr("Log", "日志"));
-    ImGui::BeginChild("log", ImVec2(0, 0), true);
-    for (const auto& l : logLines_) ImGui::TextUnformatted(l.c_str());
-    if (!logLines_.empty()) ImGui::SetScrollHereY(1.0f);
-    ImGui::EndChild();
+void App::RenderProgress() {
+    ImGui::Separator();
+
+    // Total batch progress: completed / enabled tasks.
+    int p = conv_.progress();
+    if (p < 0) p = 0;
+    if (p > 100) p = 100;
+    char pct[16];
+    std::snprintf(pct, sizeof(pct), "%d%%", p);
+    ImGui::ProgressBar(p / 100.0f, ImVec2(-1, 0), pct);
+
+    std::string cur = conv_.currentTask();
+    if (cur.empty()) cur = tr("(idle)", "（空闲）");
+    ImGui::TextDisabled("%s", (std::string(tr("Current:", "当前：")) + " " + cur).c_str());
+
+    // Show the latest log line as a one-line status instead of a full log panel.
+    if (!logLines_.empty())
+        ImGui::TextDisabled("%s", logLines_.back().c_str());
 }

@@ -110,11 +110,22 @@ bool dirExists(const std::string& p) {
 }
 
 std::string readFile(const std::string& p) {
-    std::ifstream f(p8(p), std::ios::binary);
+    std::error_code ec;
+    fs::path path = p8(p);
+    std::ifstream f(path, std::ios::binary);
     if (!f) return std::string();
-    std::ostringstream ss;
-    ss << f.rdbuf();
-    return ss.str();
+    // Size the buffer from the file size to avoid growing the string and to
+    // read the whole file with a single read() call instead of rdbuf churn.
+    uintmax_t sz = fs::file_size(path, ec);
+    if (ec || sz == 0) {
+        std::ostringstream ss;
+        ss << f.rdbuf();
+        return ss.str();
+    }
+    std::string data;
+    data.resize((size_t)sz);
+    f.read(&data[0], (std::streamsize)sz);
+    return data;
 }
 
 bool writeFile(const std::string& p, const std::string& data) {

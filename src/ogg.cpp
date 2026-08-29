@@ -14,20 +14,24 @@ namespace vorbis_wrap {
 
 namespace {
 
-struct FileOut {
-    FILE* f = nullptr;
-};
+// Output sink: writes to either a FILE* or an in-memory std::string.
+struct Sink {
+    FILE* file = nullptr;
+    std::string* mem = nullptr;
+    bool ok = true;
 
-size_t oggWrite(void* ptr, size_t size, size_t nmemb, void* datasource) {
-    FileOut* fo = (FileOut*)datasource;
-    if (!fo->f) return 0;
-    return std::fwrite(ptr, size, nmemb, fo->f);
-}
-int oggClose(void* datasource) {
-    FileOut* fo = (FileOut*)datasource;
-    if (fo->f) { std::fclose(fo->f); fo->f = nullptr; }
-    return 0;
-}
+    void write(const unsigned char* p, size_t n) {
+        if (!ok) return;
+        if (mem) {
+            mem->append((const char*)p, n);
+        } else if (file) {
+            if (std::fwrite(p, 1, n, file) != n) ok = false;
+        }
+    }
+    void write(const char* p, size_t n) {
+        write(reinterpret_cast<const unsigned char*>(p), n);
+    }
+};
 
 bool initEncoder(vorbis_info& vi, int channels, int sampleRate,
                  int bitrateBps, float quality) {
@@ -45,29 +49,16 @@ bool initEncoder(vorbis_info& vi, int channels, int sampleRate,
     return true;
 }
 
-} // namespace
-
-bool writeOgg(const std::string& path,
-              const std::vector<float>& interleaved,
-              int sampleRate, int channels, int nFrames,
-              int bitrateBps,
-              float quality,
-              std::string* err) {
+// Shared encode core. Writes Ogg pages through `sink`.
+bool encodeOgg(const std::vector<float>& interleaved,
+               int sampleRate, int channels, int nFrames,
+               int bitrateBps, float quality,
+               Sink& sink, std::string* err) {
     if (channels < 1 || channels > 2) {
         if (err) *err = "only 1 or 2 channels supported";
         return false;
     }
-#ifdef _WIN32
-    FILE* fp = _wfopen(util::utf8ToWide(path).c_str(), L"wb");
-#else
-    FILE* fp = std::fopen(path.c_str(), "wb");
-#endif
-    if (!fp) {
-        if (err) *err = "cannot open " + path;
-        return false;
-    }
     if (interleaved.size() < (size_t)nFrames * (size_t)channels) {
-        std::fclose(fp);
         if (err) *err = "sample count mismatch";
         return false;
     }
@@ -81,7 +72,6 @@ bool writeOgg(const std::string& path,
     vorbis_block vb;
 
     if (!initEncoder(vi, channels, sampleRate, bitrateBps, quality)) {
-        std::fclose(fp);
         vorbis_info_clear(&vi);
         if (err) *err = "vorbis encoder init failed";
         return false;
@@ -96,7 +86,6 @@ bool writeOgg(const std::string& path,
     vorbis_block_init(&vd, &vb);
     std::srand(12345);
     if (ogg_stream_init(&os, std::rand()) != 0) {
-        std::fclose(fp);
         vorbis_block_clear(&vb);
         vorbis_dsp_clear(&vd);
         vorbis_comment_clear(&vc);
@@ -113,23 +102,21 @@ bool writeOgg(const std::string& path,
         ogg_stream_packetin(&os, &header_comm);
         ogg_stream_packetin(&os, &header_code);
         while (ogg_stream_flush(&os, &og)) {
-            std::fwrite(og.header, 1, og.header_len, fp);
-            std::fwrite(og.body, 1, og.body_len, fp);
+            sink.write(og.header, (size_t)og.header_len);
+            sink.write(og.body, (size_t)og.body_len);
         }
     }
 
     // feed samples in blocks
-    const int kBlock = 2048;
+    const int kBlock = 4096;
     int frame = 0;
-    bool ok = true;
-    while (frame < nFrames && ok) {
+    while (frame < nFrames && sink.ok) {
         int count = std::min(kBlock, nFrames - frame);
         float** buf = vorbis_analysis_buffer(&vd, count);
         for (int i = 0; i < count; ++i) {
-            for (int ch = 0; ch < channels; ++ch) {
-                int idx = (frame + i) * channels + ch;
-                buf[ch][i] = interleaved[idx];
-            }
+            const float* src = &interleaved[(size_t)(frame + i) * (size_t)channels];
+            buf[0][i] = src[0];
+            if (channels == 2) buf[1][i] = src[1];
         }
         vorbis_analysis_wrote(&vd, count);
         frame += count;
@@ -140,18 +127,16 @@ bool writeOgg(const std::string& path,
             while (vorbis_bitrate_flushpacket(&vd, &op)) {
                 ogg_stream_packetin(&os, &op);
                 while (ogg_stream_pageout(&os, &og)) {
-                    if (std::fwrite(og.header, 1, og.header_len, fp) != (size_t)og.header_len ||
-                        std::fwrite(og.body, 1, og.body_len, fp) != (size_t)og.body_len) {
-                        ok = false;
-                        break;
-                    }
+                    sink.write(og.header, (size_t)og.header_len);
+                    sink.write(og.body, (size_t)og.body_len);
+                    if (!sink.ok) break;
                 }
             }
         }
     }
 
     // flush
-    if (ok) {
+    if (sink.ok) {
         vorbis_analysis_wrote(&vd, 0);
         while (vorbis_analysis_blockout(&vd, &vb) == 1) {
             vorbis_analysis(&vb, nullptr);
@@ -159,18 +144,16 @@ bool writeOgg(const std::string& path,
             while (vorbis_bitrate_flushpacket(&vd, &op)) {
                 ogg_stream_packetin(&os, &op);
                 while (ogg_stream_pageout(&os, &og)) {
-                    if (std::fwrite(og.header, 1, og.header_len, fp) != (size_t)og.header_len ||
-                        std::fwrite(og.body, 1, og.body_len, fp) != (size_t)og.body_len) {
-                        ok = false;
-                        break;
-                    }
+                    sink.write(og.header, (size_t)og.header_len);
+                    sink.write(og.body, (size_t)og.body_len);
+                    if (!sink.ok) break;
                 }
             }
         }
         // empty flush
         while (ogg_stream_flush(&os, &og)) {
-            std::fwrite(og.header, 1, og.header_len, fp);
-            std::fwrite(og.body, 1, og.body_len, fp);
+            sink.write(og.header, (size_t)og.header_len);
+            sink.write(og.body, (size_t)og.body_len);
         }
     }
 
@@ -179,10 +162,55 @@ bool writeOgg(const std::string& path,
     vorbis_dsp_clear(&vd);
     vorbis_comment_clear(&vc);
     vorbis_info_clear(&vi);
-    std::fclose(fp);
 
-    if (!ok && err) *err = "failed writing ogg pages";
+    if (!sink.ok) {
+        if (err) *err = "failed writing ogg pages";
+        return false;
+    }
+    return true;
+}
+
+} // namespace
+
+bool writeOgg(const std::string& path,
+              const std::vector<float>& interleaved,
+              int sampleRate, int channels, int nFrames,
+              int bitrateBps,
+              float quality,
+              std::string* err) {
+#ifdef _WIN32
+    FILE* fp = _wfopen(util::utf8ToWide(path).c_str(), L"wb");
+#else
+    FILE* fp = std::fopen(path.c_str(), "wb");
+#endif
+    if (!fp) {
+        if (err) *err = "cannot open " + path;
+        return false;
+    }
+    Sink sink;
+    sink.file = fp;
+    bool ok = encodeOgg(interleaved, sampleRate, channels, nFrames,
+                        bitrateBps, quality, sink, err);
+    std::fclose(fp);
     return ok;
+}
+
+bool writeOggMem(const std::vector<float>& interleaved,
+                 int sampleRate, int channels, int nFrames,
+                 int bitrateBps, float quality,
+                 std::string* out, std::string* err) {
+    if (!out) {
+        if (err) *err = "null output buffer";
+        return false;
+    }
+    out->clear();
+    // Reasonable size estimate (192 kbps ≈ 0.5 byte/frame) so the buffer
+    // avoids most reallocations without over-allocating for long songs.
+    out->reserve((size_t)nFrames / 2 + 8192);
+    Sink sink;
+    sink.mem = out;
+    return encodeOgg(interleaved, sampleRate, channels, nFrames,
+                     bitrateBps, quality, sink, err);
 }
 
 } // namespace vorbis_wrap

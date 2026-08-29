@@ -591,15 +591,25 @@ bool decodeOgg(const std::string& data, Sample& out, std::string* err) {
     int channels = vi ? vi->channels : 2;
 
     std::vector<float> l, r;
-    const int kChunk = 4096;
+    // Reserve the full decoded length up front to avoid repeated reallocations
+    // while growing the output vectors sample-by-sample.
+    ogg_int64_t total = ov_pcm_total(&vf, -1);
+    if (total > 0) {
+        l.reserve((size_t)total);
+        r.reserve((size_t)total);
+    }
+
+    const int kChunk = 8192;
     float** pcm = nullptr;
     long n = 0;
     while ((n = ov_read_float(&vf, &pcm, kChunk, nullptr)) > 0) {
-        for (long i = 0; i < n; ++i) {
-            float L = (channels >= 1) ? pcm[0][i] : 0.f;
-            float R = (channels >= 2) ? pcm[1][i] : L;
-            l.push_back(L);
-            r.push_back(R);
+        // libvorbis returns a contiguous float array per channel for the whole
+        // chunk, so batch-append instead of pushing one sample at a time.
+        l.insert(l.end(), pcm[0], pcm[0] + n);
+        if (channels >= 2) {
+            r.insert(r.end(), pcm[1], pcm[1] + n);
+        } else {
+            r.insert(r.end(), pcm[0], pcm[0] + n);
         }
     }
     ov_clear(&vf);
@@ -740,6 +750,16 @@ bool loadSample(const std::string& path, Sample& out, std::string* err) {
 
 // ---------------- rendering ----------------
 
+namespace {
+
+// Resampled (target-rate) stereo buffers, cached per WAV token so a sample
+// reused by hundreds of notes is only resampled once.
+struct ResampledBuf {
+    std::vector<float> l, r;
+};
+
+} // namespace
+
 std::vector<float> renderStereo(const Chart& c, const RenderOptions& opt,
                                 int& outSampleRate, int& outFrames,
                                 std::string* err) {
@@ -747,9 +767,8 @@ std::vector<float> renderStereo(const Chart& c, const RenderOptions& opt,
     Timing timing(c);
     auto events = collectAudioEvents(c, timing);
 
-    // Load and cache samples
+    // Load and cache decoded samples (native sample rate).
     std::map<std::string, std::pair<Sample, bool>> cache;
-    std::map<std::string, std::string> dirs; // unused
     for (const auto& e : events) {
         auto it = c.wavs.find(e.wav);
         if (it == c.wavs.end()) continue;
@@ -784,13 +803,24 @@ std::vector<float> renderStereo(const Chart& c, const RenderOptions& opt,
     std::vector<float> l(totalFrames, 0.f), r(totalFrames, 0.f);
 
     double master = opt.masterVolume > 0 ? opt.masterVolume : 1.0;
+    std::map<std::string, ResampledBuf> resampled;
 
     for (const auto& e : events) {
         auto cit = cache.find(e.wav);
         if (cit == cache.end() || !cit->second.second) continue;
         const Sample& s = cit->second.first;
-        std::vector<float> sl, sr;
-        resampleTo(s, opt.sampleRate, sl, sr);
+        if (s.left.empty()) continue;
+
+        // Resample once per unique WAV token and reuse it for every trigger.
+        auto rit = resampled.find(e.wav);
+        if (rit == resampled.end()) {
+            ResampledBuf rb;
+            resampleTo(s, opt.sampleRate, rb.l, rb.r);
+            rit = resampled.emplace(e.wav, std::move(rb)).first;
+        }
+        const std::vector<float>& sl = rit->second.l;
+        const std::vector<float>& sr = rit->second.r;
+
         size_t start = (size_t)(e.time * opt.sampleRate);
         double vol = master;
         auto wit = c.wavs.find(e.wav);

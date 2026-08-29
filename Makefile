@@ -66,7 +66,9 @@ OBJS := $(BUILD)/app_main.o $(BUILD)/app_app.o $(BUILD)/app_convert.o \
 # Statically link the MinGW runtime (libgcc / libstdc++ / libwinpthread) so the
 # exe is fully self-contained and does not need libgcc_s_seh-1.dll,
 # libstdc++-6.dll or libwinpthread-1.dll next to it.
-LDFLAGS := -L$(GLFW)/lib-mingw-w64 -static -static-libgcc -static-libstdc++
+# -mwindows links as a GUI-subsystem app so no console window appears when the
+# app is launched; the CLI mode still works when run from a terminal.
+LDFLAGS := -L$(GLFW)/lib-mingw-w64 -mwindows -static -static-libgcc -static-libstdc++
 LDLIBS  := -lglfw3 -lopengl32 -lgdi32 -luser32 -lshell32 -lole32 -luuid -limm32 -lwinmm -lwinpthread
 
 all: $(BIN)/pms2osu-v2.exe

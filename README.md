@@ -7,6 +7,9 @@ Dear ImGui + GLFW GUI, written from scratch in C++17.
 
 - **Drag & drop** a big folder (containing many PMS folders), a single PMS
   folder, or a `.pms` file.
+- **Modern dark GUI** — custom Dear ImGui theme (rounded controls, soft
+  contrast, blue accent) while keeping the same lightweight GLFW/OpenGL stack
+  and a fully self-contained cross-platform build.
 - Scans the imported folder and turns every folder that contains `.pms` files
   into one **.osz**.
 - Each `.osz` contains:
@@ -17,6 +20,10 @@ Dear ImGui + GLFW GUI, written from scratch in C++17.
 - Audio rendering is a complete, self-written BMS/PMS renderer (fixes the
   "PMS only converts 3/4" bug found in the old reference tooling) and encodes
   with the bundled libvorbis at **192 kbps** (managed bitrate).
+- **Fast OGG handling** — audio is encoded straight into memory (no temp-file
+  round-trip or double read-back), OGG/WAV decoding uses batch-copy with
+  pre-reserved buffers, and each sample is resampled only once per chart even
+  if it is triggered hundreds of times.
 - `.osz` is a standard (stored) ZIP written by our own minimal zip writer.
 
 ## Build (Windows, w64devkit)
