@@ -42,6 +42,17 @@ static void glfwError(int code, const char* desc) {
     std::fprintf(stderr, "GLFW error %d: %s\n", code, desc);
 }
 
+// The app is a WIN32 GUI-subsystem binary (no console), so on Windows show a
+// message box instead of silently exiting when startup fails. On other
+// platforms fall back to stderr.
+static void showStartupError(const char* msg) {
+#ifdef _WIN32
+    MessageBoxA(nullptr, msg, "pms2osu-v2 - failed to start", MB_OK | MB_ICONERROR);
+#else
+    std::fprintf(stderr, "pms2osu-v2: %s\n", msg);
+#endif
+}
+
 static void dropCallback(GLFWwindow*, int count, const char** paths) {
     for (int i = 0; i < count; ++i) {
         std::string p = paths[i];
@@ -207,22 +218,41 @@ int main(int argc, char** argv) {
     }
 
     if (!glfwInit()) {
-        std::fprintf(stderr, "Failed to init GLFW\n");
+        showStartupError("Failed to initialize GLFW.");
         return 1;
     }
     glfwSetErrorCallback(glfwError);
 
+    const std::string windowTitle = std::string("pms2osu-v2 v") + kVersion;
+    const char* glslVersion = nullptr;
+    GLFWwindow* window = nullptr;
+
+    // Prefer a modern OpenGL 3.2 core context, but fall back to OpenGL 2.1
+    // for older GPUs/drivers (common on 32-bit machines) that don't support
+    // 3.2. Otherwise the window fails to create and the GUI app exits
+    // silently with no console to show the error.
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 #ifdef __APPLE__
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 #endif
-
-    const std::string windowTitle = std::string("pms2osu-v2 v") + kVersion;
-    GLFWwindow* window = glfwCreateWindow(1000, 700, windowTitle.c_str(), nullptr, nullptr);
+    window = glfwCreateWindow(1000, 700, windowTitle.c_str(), nullptr, nullptr);
+    if (window) {
+        glslVersion = "#version 150";
+    } else {
+        glfwDefaultWindowHints();
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
+        glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_ANY_PROFILE);
+        window = glfwCreateWindow(1000, 700, windowTitle.c_str(), nullptr, nullptr);
+        if (window) glslVersion = "#version 120";
+    }
     if (!window) {
-        std::fprintf(stderr, "Failed to create window\n");
+        showStartupError(
+            "Failed to create an OpenGL window.\n"
+            "Your graphics driver may be too old (needs OpenGL 2.1 at least).\n"
+            "Please update your GPU driver and try again.");
         glfwTerminate();
         return 1;
     }
@@ -235,7 +265,7 @@ int main(int argc, char** argv) {
     setupStyle();
     loadCjkFont();
     ImGui_ImplGlfw_InitForOpenGL(window, true);
-    ImGui_ImplOpenGL3_Init("#version 130");
+    ImGui_ImplOpenGL3_Init(glslVersion);
 
     g_app.setWindow(window);
 
