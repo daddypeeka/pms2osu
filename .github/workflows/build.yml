@@ -111,7 +111,10 @@ jobs:
         shell: msys2 {0}
         run: |
           git clone --depth 1 --branch 3.4 https://github.com/glfw/glfw.git third_party/glfw-src
-          cmake -S third_party/glfw-src -B glfw-build \
+          # Force "MSYS Makefiles" so CMake keeps WIN32=TRUE. The default
+          # generator in MSYS2 MINGW32 may be "Unix Makefiles", which makes
+          # GLFW try to build the X11/Wayland backend and fail.
+          cmake -S third_party/glfw-src -B glfw-build -G "MSYS Makefiles" \
             -DGLFW_BUILD_EXAMPLES=OFF -DGLFW_BUILD_TESTS=OFF -DGLFW_BUILD_DOCS=OFF \
             -DGLFW_INSTALL=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=glfw-prefix
           cmake --build glfw-build -j
@@ -121,7 +124,7 @@ jobs:
         if: runner.os == 'Windows' && matrix.build_system == 'cmake'
         shell: msys2 {0}
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+          cmake -S . -B build -G "MSYS Makefiles" -DCMAKE_BUILD_TYPE=Release \
             -DPMS2OSU_USE_BUNDLED_GLFW=OFF \
             -DPMS2OSU_GLFW_ROOT="$PWD/glfw-prefix"
           cmake --build build --config Release -j
