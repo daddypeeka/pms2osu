@@ -48,11 +48,13 @@ jobs:
             os: windows-latest
             arch: x86
             msystem: MINGW32
+            # MSYS2 ships no mingw-w64-i686-glfw package, so GLFW is built
+            # from source below (git is used to fetch it).
             msys_packages: >-
               mingw-w64-i686-gcc
-              mingw-w64-i686-glfw
               make
               cmake
+              git
             build_system: cmake
             artifact_name: pms2osu-v2-windows-x86
             binary_path: dist/pms2osu-v2-windows-x86.exe
@@ -104,11 +106,24 @@ jobs:
         shell: msys2 {0}
         run: make
 
+      - name: Build GLFW (Windows 32-bit, from source)
+        if: runner.os == 'Windows' && matrix.build_system == 'cmake'
+        shell: msys2 {0}
+        run: |
+          git clone --depth 1 --branch 3.4 https://github.com/glfw/glfw.git third_party/glfw-src
+          cmake -S third_party/glfw-src -B glfw-build \
+            -DGLFW_BUILD_EXAMPLES=OFF -DGLFW_BUILD_TESTS=OFF -DGLFW_BUILD_DOCS=OFF \
+            -DGLFW_INSTALL=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=glfw-prefix
+          cmake --build glfw-build -j
+          cmake --install glfw-build
+
       - name: Build (Windows, CMake / 32-bit)
         if: runner.os == 'Windows' && matrix.build_system == 'cmake'
         shell: msys2 {0}
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DPMS2OSU_USE_BUNDLED_GLFW=OFF
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DPMS2OSU_USE_BUNDLED_GLFW=OFF \
+            -DPMS2OSU_GLFW_ROOT="$PWD/glfw-prefix"
           cmake --build build --config Release -j
 
       - name: Build (Linux / macOS)

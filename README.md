@@ -68,8 +68,8 @@ dependencies are required.
 
 - **Windows x64** — MinGW-w64 `MINGW64` (`make` + bundled GLFW),
   output `dist/pms2osu-v2-windows-x64.exe`
-- **Windows x86 (32-bit)** — MinGW-w32 `MINGW32` (i686 GCC + system
-  `mingw-w64-i686-glfw`, CMake), output `dist/pms2osu-v2-windows-x86.exe`
+- **Windows x86 (32-bit)** — MinGW-w32 `MINGW32` (i686 GCC, GLFW built
+  from source), output `dist/pms2osu-v2-windows-x86.exe`
 - **macOS x64** — Intel runner (`macos-13`), Homebrew GLFW + CMake,
   output `dist/pms2osu-v2-macos-x64`
 - **Linux x64** — `libglfw3-dev` + CMake, output `dist/pms2osu-v2-linux-x64`
@@ -86,14 +86,23 @@ Every push/PR uploads each binary as a build artifact. Pushing a `v*` tag (e.g.
 ### Building the 32-bit Windows version locally
 
 The bundled GLFW archive (`third_party/glfw/lib-mingw-w64/libglfw3.a`) is
-**64-bit only**, so the 32-bit build links the system GLFW instead. Inside an
-MSYS2 **MINGW32** shell (with `mingw-w64-i686-gcc`, `mingw-w64-i686-glfw` and
-`make` installed):
+**64-bit only**, and MSYS2 ships no `mingw-w64-i686-glfw` package, so the
+32-bit build compiles GLFW from source. Inside an MSYS2 **MINGW32** shell
+(with `mingw-w64-i686-gcc`, `make`, `cmake` and `git` installed):
 
 ```
-make GLFW_LIB=/mingw32/lib
-# or, via CMake:
-cmake -S . -B build32 -DCMAKE_BUILD_TYPE=Release -DPMS2OSU_USE_BUNDLED_GLFW=OFF
+# 1) build GLFW 3.4 from source
+git clone --depth 1 --branch 3.4 https://github.com/glfw/glfw.git third_party/glfw-src
+cmake -S third_party/glfw-src -B glfw-build \
+  -DGLFW_BUILD_EXAMPLES=OFF -DGLFW_BUILD_TESTS=OFF -DGLFW_BUILD_DOCS=OFF \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=glfw-prefix
+cmake --build glfw-build -j
+cmake --install glfw-build
+
+# 2) build the 32-bit app against it
+cmake -S . -B build32 -DCMAKE_BUILD_TYPE=Release \
+  -DPMS2OSU_USE_BUNDLED_GLFW=OFF \
+  -DPMS2OSU_GLFW_ROOT="$PWD/glfw-prefix"
 cmake --build build32 --config Release -j
 ```
 
